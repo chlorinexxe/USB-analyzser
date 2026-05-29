@@ -1,0 +1,6 @@
+{
+  "name": "USB Cable Analyzer",
+  "description": "Modern real-time USB-C and charger analyzer with glassmorphic visuals, live power diagnosis, speed grading, and parameter logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
