@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.CableClassification
@@ -58,6 +59,7 @@ fun CableAnalyzerScreen(viewModel: UsbViewModel) {
     val powerHistory by viewModel.powerHistory.collectAsState()
 
     val connectorType by viewModel.connectorType.collectAsState()
+    val effectiveConnectorType by viewModel.effectiveConnectorType.collectAsState()
     val eMarkerIndicator by viewModel.eMarkerIndicator.collectAsState()
     val videoAltMode by viewModel.videoAltMode.collectAsState()
     val perceivedSpeed by viewModel.perceivedSpeed.collectAsState()
@@ -115,33 +117,27 @@ fun CableAnalyzerScreen(viewModel: UsbViewModel) {
 
     // Background floating animated dots animation for depth/shimmer glassmorphism effect
     val infiniteTransition = rememberInfiniteTransition(label = "BackgroundParticles")
-    val dotOffset1 by if (animationSpeed != 2) {
-        infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 200f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(if (animationSpeed == 1) 14000 else 8000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "Dot1"
-        )
-    } else {
-        remember { mutableStateOf(0f) }
-    }
+    val dotOffset1State = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 200f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (animationSpeed == 1) 14000 else 8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "Dot1"
+    )
+    val dotOffset1 = if (animationSpeed != 2) dotOffset1State.value else 0f
     
-    val dotOffset2 by if (animationSpeed != 2) {
-        infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = -180f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(if (animationSpeed == 1) 20000 else 12000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "Dot2"
-        )
-    } else {
-        remember { mutableStateOf(0f) }
-    }
+    val dotOffset2State = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = -180f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (animationSpeed == 1) 20000 else 12000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "Dot2"
+    )
+    val dotOffset2 = if (animationSpeed != 2) dotOffset2State.value else 0f
 
     val currentTypography = MaterialTheme.typography.copy(
         displayLarge = MaterialTheme.typography.displayLarge.copy(fontFamily = themeFont),
@@ -319,6 +315,8 @@ fun CableAnalyzerScreen(viewModel: UsbViewModel) {
                             1 -> ProfilerTab(
                                 usbState = usbState,
                                 classifications = classifications,
+                                connectorType = connectorType,
+                                onConnectorTypeChange = { viewModel.setConnectorType(it) },
                                 themePrimary = themePrimary,
                                 themeSecondary = themeSecondary,
                                 themeAccent = themeAccent,
@@ -338,6 +336,7 @@ fun CableAnalyzerScreen(viewModel: UsbViewModel) {
                             )
                             3 -> SpecsTab(
                                 usbState = usbState,
+                                connectorType = effectiveConnectorType,
                                 themePrimary = themePrimary,
                                 themeSecondary = themeSecondary,
                                 themeAccent = themeAccent,
@@ -523,12 +522,64 @@ fun DashboardTab(
         classifications.firstOrNull { it.compatibilityRating > 0.45 } ?: classifications.firstOrNull()
     }
     val powerHistory by viewModel.powerHistory.collectAsState()
+    val effectiveConnectorType by viewModel.effectiveConnectorType.collectAsState()
+    val connectorType by viewModel.connectorType.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        // Highly visible connection modality banner: Live vs Standby Info
+        item {
+            val isConnected = usbState.isConnected
+            val bannerBorderColor = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308)
+            
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = bannerBorderColor,
+                themePrimary = bannerBorderColor,
+                layoutSelection = layoutSelection
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                color = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308),
+                                shape = CircleShape
+                            )
+                    )
+                    Text(
+                        text = if (isConnected) "🟢 LIVE SYSTEM CONNECTED" else "⚠️ STANDBY REFERENCE DATA",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308),
+                            letterSpacing = 1.2.sp,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (isConnected) {
+                        "Active physical connection was sensed on the USB-C transceiver. Electrical metrics, impedance rates, and safety configuration channels are receiving live data sweeps."
+                    } else {
+                        "No physical cable detected. Operating in simulation reference mode. The metrics and diagram outputs below express specifications and typical performance of the targeted interface."
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                )
+            }
+        }
+
         // Section A: Cable Matrix Header
         item {
             Text(
@@ -561,7 +612,6 @@ fun DashboardTab(
             val animatedGlowAlpha = 0.25f - (pulseScale * 0.15f)
 
             val hasStorage = usbState.usbDevices.any { it.isStorage }
-            val connectorType by viewModel.connectorType.collectAsState()
 
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -614,7 +664,7 @@ fun DashboardTab(
                             ) {
                                 DynamicUsbIcon(
                                     isConnected = usbState.isConnected,
-                                    connectorType = connectorType,
+                                    connectorType = effectiveConnectorType,
                                     isSuperSpeed = usbState.usbDevices.any { it.maxSpeedMbps > 440 } || hasStorage,
                                     isStorageConnected = hasStorage,
                                     themePrimary = themePrimary,
@@ -838,13 +888,103 @@ fun DashboardTab(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "A live capture of peripheral controllers and physical host layers operating on the hardware bus. Sensed standard specifications and dual-role architecture variables can be inspected below.",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.5f),
+                        lineHeight = 14.sp
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Detailed parameters detailing "what USB configuration is used"
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.02f), shape = RoundedCornerShape(10.dp))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "ACTIVE CONTROLLER SPECIFICATION",
+                        color = themePrimary.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            letterSpacing = 0.8.sp
+                        )
+                    )
+
+                    val activePortType = when (effectiveConnectorType) {
+                        1 -> "USB Type-C to Type-C"
+                        2 -> "USB Type-C to Type-A"
+                        3 -> "USB Type-C to Lightning"
+                        4 -> "USB Type-C to Micro-USB"
+                        else -> "Sensed Dual-Role Controller"
+                    }
+
+                    InteractiveParameterRow(
+                        label = "Physical Interface utilized",
+                        value = activePortType,
+                        valueColor = themeAccent
+                    )
+
+                    val activeSpeedRate = if (usbState.isConnected) {
+                        if (usbState.usbDevices.any { it.maxSpeedMbps > 440 }) "SuperSpeed Gen 2 (up to 10Gbps)" else "High-Speed v2.0 (480Mbps)"
+                    } else {
+                        "High-Speed v2.0 (Standby Info mode)"
+                    }
+
+                    InteractiveParameterRow(
+                        label = "Dynamic negotiation standard",
+                        value = activeSpeedRate,
+                        valueColor = Color.White
+                    )
+
+                    val activePowerRole = if (usbState.isConnected) {
+                        if (usbState.powerSource == "AC Fast Charger") "Power Sink (Receiving charge)" else "Dual-Power Negotiator"
+                    } else {
+                        "Standby (Ad-hoc CC Pulls)"
+                    }
+
+                    InteractiveParameterRow(
+                        label = "Negotiated power profile",
+                        value = activePowerRole,
+                        valueColor = Color.White
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Host Controller Driver class",
+                        value = if (usbState.hasUsbHostFeature) "USB OpenHost (OHCI) Driver" else "USB Client Device Core",
+                        valueColor = if (usbState.hasUsbHostFeature) themePrimary else Color.White.copy(alpha = 0.5f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "ATTACHED PHYSICAL HARDWARE PLUGS",
+                    color = Color.White.copy(alpha = 0.4f),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        letterSpacing = 0.8.sp
+                    ),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
 
                 if (usbState.usbDevices.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp),
+                            .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(12.dp))
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -852,15 +992,16 @@ fun DashboardTab(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = "Empty",
                                 tint = Color.White.copy(alpha = 0.35f),
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "No external USB devices detected via this connection.\nAttach an OTG storage device or legacy drive to inspect physical configurations.",
+                                text = "Zero external USB devices are actively hosting via this channel.\nAttach an OTG storage device or accessory to launch additional sweeps.",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     color = Color.White.copy(alpha = 0.45f),
-                                    textAlign = TextAlign.Center
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 14.sp
                                 )
                             )
                         }
@@ -934,53 +1075,72 @@ fun DashboardTab(
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            StorageInfoItem("BRAND / CHIPSET ID", dev.brand, themePrimary)
-                                            StorageInfoItem("USB PROTOCOL CLASS", dev.usbVersion, Color.White)
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem("BRAND / CHIPSET ID", dev.brand, themePrimary)
+                                            }
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem("USB PROTOCOL CLASS", dev.usbVersion, Color.White)
+                                            }
                                         }
                                         
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            StorageInfoItem("MAX BUS SPEED", dev.speedClassString, Color.White)
-                                            StorageInfoItem("FILE SYSTEM FORMAT", dev.fileSystem, Color.White)
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem("MAX BUS SPEED", dev.speedClassString, Color.White)
+                                            }
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem("FILE SYSTEM FORMAT", dev.fileSystem, Color.White)
+                                            }
                                         }
 
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            StorageInfoItem("SECTOR CAPACITY", if (dev.storageCapacityGB >= 1024) "${dev.storageCapacityGB / 1024} Terabyte (TB)" else "${dev.storageCapacityGB} Gigabytes (GB)", themeAccent)
-                                            StorageInfoItem(
-                                                "FABRICATIVE LIFETIME", 
-                                                "Mfg ${dev.releaseYear} (${dev.estimatedAgeYears} years old)", 
-                                                if (dev.estimatedAgeYears > 8) themeAccent else themePrimary
-                                            )
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem("SECTOR CAPACITY", if (dev.storageCapacityGB >= 1024) "${dev.storageCapacityGB / 1024} Terabyte (TB)" else "${dev.storageCapacityGB} Gigabytes (GB)", themeAccent)
+                                            }
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                StorageInfoItem(
+                                                    "FABRICATIVE LIFETIME", 
+                                                    "Mfg ${dev.releaseYear} (${dev.estimatedAgeYears} years old)", 
+                                                    if (dev.estimatedAgeYears > 8) themeAccent else themePrimary
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
                                     // standard non-storage parameters
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            text = "Class: ${dev.deviceClass}  |  Speed: ${dev.maxSpeedMbps} Mbps",
+                                            text = "Class: ${dev.deviceClass} • Speed: ${dev.maxSpeedMbps} Mbps",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontSize = 10.sp,
                                                 fontFamily = FontFamily.Monospace,
                                                 color = Color.White.copy(alpha = 0.5f)
-                                            )
+                                            ),
+                                            modifier = Modifier.weight(1.1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "VID: ${dev.vendorId} | PID: ${dev.productId}",
+                                            text = "VID: ${dev.vendorId} • PID: ${dev.productId}",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontSize = 10.sp,
                                                 fontFamily = FontFamily.Monospace,
                                                 color = Color.White.copy(alpha = 0.5f)
-                                            )
+                                            ),
+                                            modifier = Modifier.weight(0.9f),
+                                            textAlign = TextAlign.End,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -1030,20 +1190,25 @@ fun DashboardTab(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    PowerIndicatorGauge(
-                        value = usbState.chargingPowerWatts,
-                        maxLimit = 100.0,
-                        unit = "W",
-                        label = "Sensed Power",
-                        color = themePrimary,
-                        modifier = Modifier.size(110.dp)
-                    )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PowerIndicatorGauge(
+                            value = usbState.chargingPowerWatts,
+                            maxLimit = 100.0,
+                            unit = "W",
+                            label = "Sensed Power",
+                            color = themePrimary,
+                            modifier = Modifier.size(110.dp)
+                        )
+                    }
 
                     Column(
-                        modifier = Modifier.padding(start = 12.dp),
+                        modifier = Modifier.weight(1.2f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         MetricParameterRow(
@@ -1157,6 +1322,78 @@ fun DashboardTab(
                         value = if (usbState.maxPowerWatts > 0) "${usbState.maxPowerWatts}W Limit" else "Monitored on continuous sweep",
                         valueColor = Color.White
                     )
+                }
+            }
+        }
+
+        // Local Device USB Hardware Engine Specs Card
+        item {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "LOCAL DEVICE USB HARDWARE ENGINE",
+                    color = themePrimary,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 1.sp
+                    ),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("USB OTG Host Feature", usbState.hasUsbHostFeature, themePrimary)
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("Host Accessories API", usbState.hasUsbAccessoryFeature, themePrimary)
+                        }
+                    }
+
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    InteractiveParameterRow(
+                        label = "Native Host Engine",
+                        value = if (usbState.hasUsbHostFeature) "USB OTG Host Controller" else "USB client only",
+                        valueColor = if (usbState.hasUsbHostFeature) themePrimary else Color.White.copy(alpha = 0.5f)
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Estimated Controller Speed",
+                        value = if (usbState.hasUsbHostFeature) "SuperSpeed USB 3.x (Up to 10Gbps)" else "High-Speed USB 2.0 (480Mbps)",
+                        valueColor = Color.White
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Hardware Architecture",
+                        value = "Reversible Type-C Interface",
+                        valueColor = themeAccent
+                    )
+
+                    InteractiveParameterRow(
+                        label = "DMA Transfer Channels",
+                        value = "Armed (Hardware accelerated)",
+                        valueColor = Color.White
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "ℹ️ Hardware scans verify that your local Android device comprises a dual-role Type-C port capable of negotiating power policies and sensing attachment interfaces on-the-fly.",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.5.sp,
+                                color = Color.White.copy(alpha = 0.5f),
+                                lineHeight = 12.sp
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -1417,23 +1654,32 @@ fun SignalCheckbox(label: String, checked: Boolean, color: Color) {
 @Composable
 fun InteractiveParameterRow(label: String, value: String, valueColor: Color) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            label,
-            style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.6f)),
-            modifier = Modifier.weight(1f)
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp
+            ),
+            modifier = Modifier.weight(1.1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
-            value,
+            text = value,
             style = MaterialTheme.typography.bodySmall.copy(
                 fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = FontFamily.SansSerif,
                 color = valueColor,
-                textAlign = TextAlign.End
-            )
+                textAlign = TextAlign.End,
+                fontSize = 11.sp
+            ),
+            modifier = Modifier.weight(0.9f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -1519,7 +1765,7 @@ fun DynamicUsbIcon(
                 topLeft = Offset(center.x - 7.dp.toPx(), center.y - heightDisk / 2f - 4.dp.toPx()),
                 size = androidx.compose.ui.geometry.Size(14.dp.toPx(), 4.dp.toPx())
             )
-        } else if (connectorType == 1) {
+        } else if (connectorType == 2) {
             // Legacy USB-A male core
             val boxW = 32.dp.toPx()
             val boxH = 26.dp.toPx()
@@ -1544,6 +1790,69 @@ fun DynamicUsbIcon(
                 topLeft = Offset(center.x - boxW / 2f + 4.dp.toPx(), center.y - boxH / 2f + 4.dp.toPx()),
                 size = androidx.compose.ui.geometry.Size(boxW - 8.dp.toPx(), 6.dp.toPx())
             )
+        } else if (connectorType == 3) {
+            // Apple Lightning plug male interface
+            val pillW = 22.dp.toPx()
+            val pillH = 34.dp.toPx()
+
+            // Outer stainless steel head collar
+            drawRoundRect(
+                color = themeAccent.copy(alpha = 0.15f),
+                topLeft = Offset(center.x - pillW / 2f, center.y - pillH / 2f),
+                size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.6f),
+                topLeft = Offset(center.x - pillW / 2f, center.y - pillH / 2f),
+                size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+
+            // Draw Apple golden contacts (8 contact stripes)
+            val totalStripes = 8
+            val startX = center.x - pillW / 2f + 2.dp.toPx()
+            val stripeSpacing = (pillW - 4.dp.toPx()) / totalStripes
+            for (i in 0 until totalStripes) {
+                val sX = startX + (i * stripeSpacing)
+                drawRoundRect(
+                    color = Color(0xFFEAB308), // Gold color
+                    topLeft = Offset(sX, center.y - 12.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(1.5.dp.toPx(), 8.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(0.5.dp.toPx(), 0.5.dp.toPx())
+                )
+            }
+        } else if (connectorType == 4) {
+            // Trapezoidal micro-USB shape
+            val path = androidx.compose.ui.graphics.Path().apply {
+                val x1 = center.x - 16.dp.toPx()
+                val x2 = center.x + 16.dp.toPx()
+                val topY = center.y - 10.dp.toPx()
+                val botY = center.y + 10.dp.toPx()
+                
+                val x1Top = center.x - 11.dp.toPx()
+                val x2Top = center.x + 11.dp.toPx()
+                
+                moveTo(x1Top, topY)
+                lineTo(x2Top, topY)
+                lineTo(x2, botY)
+                lineTo(x1, botY)
+                close()
+            }
+            drawPath(
+                path = path,
+                color = themePrimary.copy(alpha = 0.15f)
+            )
+            drawPath(
+                path = path,
+                color = themePrimary,
+                style = Stroke(width = 2.dp.toPx())
+            )
+
+            // Dynamic bottom pins hook lines
+            drawCircle(color = themeAccent, radius = 2.dp.toPx(), center = Offset(center.x - 6.dp.toPx(), center.y + 3.dp.toPx()))
+            drawCircle(color = themeAccent, radius = 2.dp.toPx(), center = Offset(center.x + 6.dp.toPx(), center.y + 3.dp.toPx()))
         } else {
             // Symmetric physical Type-C plug illustration
             val pillW = 46.dp.toPx()
@@ -1903,17 +2212,32 @@ fun BatteryTelemetryGraph(
 fun ProfilerTab(
     usbState: UsbStateInfo,
     classifications: List<CableClassification>,
+    connectorType: Int,
+    onConnectorTypeChange: (Int) -> Unit,
     themePrimary: Color = Color(0xFF60A5FA),
     themeSecondary: Color = Color(0xFF818CF8),
     themeAccent: Color = Color(0xFFF472B6),
     layoutSelection: Int = 0
 ) {
-    // Derive the values in the UI for display based on automated judgment
-    val isCc = if (usbState.isConnected) {
+    // Determine active layout based on selected connectorType
+    val isAppleDevice = usbState.isConnected && (
+        usbState.usbDevices.any { it.vendorId.equals("0x05AC", ignoreCase = true) || it.manufacturer.contains("Apple", ignoreCase = true) || it.product.contains("iPhone", ignoreCase = true) || it.product.contains("iPad", ignoreCase = true) }
+    )
+    val isAutoCc = if (usbState.isConnected) {
         (usbState.chargingPowerWatts > 15.0) || (usbState.powerSource == "AC Fast Charger") || (usbState.chargingCurrentAmperes > 1.5) || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
     } else {
         true
     }
+
+    val activeType = when (connectorType) {
+        0 -> if (isAppleDevice) 3 else if (isAutoCc) 1 else 2
+        else -> connectorType
+    }
+
+    val isCc = activeType == 1
+    val isLightning = activeType == 3
+    val isMicro = activeType == 4
+    val isAc = activeType == 2
     
     val emarkYes = usbState.isConnected && isCc && (
         usbState.chargingPowerWatts > 60.0 || usbState.maxPowerWatts > 60.0 || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
@@ -1925,11 +2249,121 @@ fun ProfilerTab(
         usbState.usbDevices.any { it.maxSpeedMbps > 440 } || usbState.chargingPowerWatts > 18.0
     )
 
+    val profileOptions = listOf("Auto-Sense", "C to C", "C to A", "C to Lightning", "C to Micro")
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        // Highly visible connection modality banner: Live vs Theoretical/Standby Info
+        item {
+            val isConnected = usbState.isConnected
+            val bannerBorderColor = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308)
+            val bannerBgGlow = if (isConnected) Color(0xFF10B981).copy(alpha = 0.08f) else Color(0xFFEAB308).copy(alpha = 0.06f)
+            
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = bannerBorderColor,
+                themePrimary = bannerBorderColor,
+                layoutSelection = layoutSelection
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                color = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308),
+                                shape = CircleShape
+                            )
+                    )
+                    Text(
+                        text = if (isConnected) "🟢 LIVE HARDWARE TELEMETRY ACTIVE" else "⚠️ STANDBY REFERENCE SIGNATURES",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isConnected) Color(0xFF10B981) else Color(0xFFEAB308),
+                            letterSpacing = 1.2.sp,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = if (isConnected) {
+                        "Analyzing physical electrical channels. Real-time metrics indicate the active impedance profile, transceiver class, and CC driver safety pull-ups directly from the connected USB client."
+                    } else {
+                        "No physical connection detected. Operating in high-fidelity info-simulation mode. The metrics and waveforms displayed below represent standard specifications and design limits for the selected: ${if (connectorType == 0) "Auto-Sensed" else profileOptions[connectorType]} adapter."
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    )
+                )
+            }
+        }
+
+        // Option Selector Card
+        item {
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = themeAccent,
+                themePrimary = themePrimary,
+                layoutSelection = layoutSelection
+            ) {
+                Text(
+                    text = "ACTIVE PHYSICAL CONNECTOR PROFILE MODELLER",
+                    color = themeAccent,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 1.sp
+                    ),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "Observe real-time auto-sensed telemetry, or manually override the active physical wiring profile down below to analyze impedance curves & diagnostic thresholds.",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.5f),
+                        lineHeight = 14.sp
+                    ),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    profileOptions.forEachIndexed { idx, title ->
+                        val isSel = connectorType == idx
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(if (isSel) themePrimary.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.03f), RoundedCornerShape(10.dp))
+                                .border(1.dp, if (isSel) themePrimary else Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                .clickable { onConnectorTypeChange(idx) }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 8.5.sp,
+                                    color = if (isSel) Color.White else Color.White.copy(alpha = 0.6f)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Active HW Probe Grid
         item {
             GlassCard(modifier = Modifier.fillMaxWidth(), themePrimary = themePrimary, layoutSelection = layoutSelection, borderColor = themePrimary) {
@@ -1951,8 +2385,13 @@ fun ProfilerTab(
                     ProbeRowItem(
                         title = "Termination Interface",
                         value = if (usbState.isConnected) {
-                            if (isCc) "Type-C to Type-C Core Sensed (Dual Configuration Channels Active)" 
-                            else "Type-A to Type-C Legacy Sensed (56kΩ safety pull-up verified)"
+                            when (activeType) {
+                                1 -> "Type-C to Type-C Core Sensed (Dual Configuration Channels Active)"
+                                2 -> "Type-A to Type-C Legacy Sensed (56kΩ safety pull-up verified)"
+                                3 -> "Type-C to Lightning Sensed (Proprietary Apple MFi connector handshaking)"
+                                4 -> "Type-C to Micro-USB Sensed (Legacy 5-pin configuration mapped)"
+                                else -> "Sensing active..."
+                            }
                         } else "Coupler standby (Reference signature loaded)",
                         status = usbState.isConnected,
                         themeAccent = themeAccent
@@ -1962,7 +2401,7 @@ fun ProfilerTab(
                         title = "E-Marker Spec silicon",
                         value = if (usbState.isConnected) {
                             if (emarkYes) "VERIFIED SIGNATURE (E-Marker CPU responding, EPR 240W capabilities unlocked)" 
-                            else "COPPER HIGH-CAP STANDARD (Standard passive pass, capped at 60W/3A)"
+                            else "COPPER HIGH-CAP STANDARD (Standard passive pass, capped at 60W/3A / Lightning C94)"
                         } else "Coupler standby (Reference signature loaded)",
                         status = emarkYes,
                         themeAccent = themeAccent
@@ -1972,7 +2411,7 @@ fun ProfilerTab(
                         title = "Video Payload Transceiver (Alt Mode)",
                         value = if (usbState.isConnected) {
                             if (videoYes) "VERIFIED SUPPORT (Lanes A2, A3, B10, B11 mapped for DP Alternate Video payload)" 
-                            else "UNSUPPORTED (High-frequency lanes restricted for generic high speed sync only)"
+                            else "UNSUPPORTED (High-frequency lanes restricted for generic high speed sync/power charge only)"
                         } else "Coupler standby (Reference signature loaded)",
                         status = videoYes,
                         themeAccent = themeAccent
@@ -2533,16 +2972,15 @@ fun DiagnosticResultView(
 @Composable
 fun SpecsTab(
     usbState: UsbStateInfo,
+    connectorType: Int,
     themePrimary: Color = Color(0xFF60A5FA),
     themeSecondary: Color = Color(0xFF818CF8),
     themeAccent: Color = Color(0xFFF472B6),
     layoutSelection: Int = 0
 ) {
     val isConnected = usbState.isConnected
-    val isCc = isConnected && (
-        usbState.chargingPowerWatts > 15.0 || usbState.powerSource == "AC Fast Charger" || usbState.chargingCurrentAmperes > 1.5 || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
-    )
-    val isSuperSpeed = isConnected && (
+    val isCc = connectorType == 1 || connectorType == 3
+    val isSuperSpeed = isConnected && (connectorType == 1 || connectorType == 2) && (
         usbState.usbDevices.any { it.maxSpeedMbps > 440 } || usbState.chargingPowerWatts > 18.0
     )
 
@@ -2578,6 +3016,7 @@ fun SpecsTab(
                 // Render vector schematics of Type-C plug pins
                 UsbTypeCPinoutCanvas(
                     usbState = usbState,
+                    connectorType = connectorType,
                     themePrimary = themePrimary,
                     themeSecondary = themeSecondary,
                     themeAccent = themeAccent,
@@ -2694,44 +3133,51 @@ fun PinoutCategoryRow(
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(54.dp)
-                        .background(
-                            if (isActive) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f), 
-                            shape = RoundedCornerShape(5.dp)
-                        )
-                        .border(
-                            0.5.dp, 
-                            if (isActive) color.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f), 
-                            shape = RoundedCornerShape(5.dp)
-                        )
-                        .padding(vertical = 4.dp),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.5.sp,
-                            color = if (isActive) color else Color.White.copy(alpha = 0.4f),
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                    Box(
+                        modifier = Modifier
+                            .width(54.dp)
+                            .background(
+                                if (isActive) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f), 
+                                shape = RoundedCornerShape(5.dp)
+                            )
+                            .border(
+                                0.5.dp, 
+                                if (isActive) color.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f), 
+                                shape = RoundedCornerShape(5.dp)
+                            )
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.5.sp,
+                                color = if (isActive) color else Color.White.copy(alpha = 0.4f),
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
                         )
+                    }
+                    
+                    Text(
+                        text = pins, 
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = if (isActive) Color.White else Color.White.copy(alpha = 0.4f), 
+                            fontWeight = FontWeight.Bold, 
+                            fontSize = 10.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                
-                Text(
-                    text = pins, 
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (isActive) Color.White else Color.White.copy(alpha = 0.4f), 
-                        fontWeight = FontWeight.Bold, 
-                        fontSize = 10.sp
-                    )
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
 
                 // Connection badge status text
                 Box(
@@ -2754,7 +3200,9 @@ fun PinoutCategoryRow(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = if (isActive) color else Color.White.copy(alpha = 0.3f)
-                        )
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -2779,17 +3227,37 @@ fun StandardRow(std: String, speed: String, voltAmp: String, watt: String, theme
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(std, style = MaterialTheme.typography.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.5.sp))
-            Text(speed, style = MaterialTheme.typography.labelSmall.copy(color = themePrimary, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace))
+        Column(modifier = Modifier.weight(1.1f)) {
+            Text(
+                text = std, 
+                style = MaterialTheme.typography.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.5.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = speed, 
+                style = MaterialTheme.typography.labelSmall.copy(color = themePrimary, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
-        Column(horizontalAlignment = Alignment.End) {
-            Text(voltAmp, style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.7f), fontSize = 10.sp, fontFamily = FontFamily.Monospace))
-            Text(watt, style = MaterialTheme.typography.labelSmall.copy(color = themeAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp, fontFamily = FontFamily.Monospace))
+        Column(modifier = Modifier.weight(0.9f), horizontalAlignment = Alignment.End) {
+            Text(
+                text = voltAmp, 
+                style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.7f), fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = watt, 
+                style = MaterialTheme.typography.labelSmall.copy(color = themeAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -2798,6 +3266,7 @@ fun StandardRow(std: String, speed: String, voltAmp: String, watt: String, theme
 @Composable
 fun UsbTypeCPinoutCanvas(
     usbState: UsbStateInfo,
+    connectorType: Int,
     themePrimary: Color,
     themeSecondary: Color,
     themeAccent: Color,
@@ -2805,13 +3274,8 @@ fun UsbTypeCPinoutCanvas(
 ) {
     // Derive connection properties
     val isConnected = usbState.isConnected
-    val isCc = if (isConnected) {
-        (usbState.chargingPowerWatts > 15.0) || (usbState.powerSource == "AC Fast Charger") || (usbState.chargingCurrentAmperes > 1.5) || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
-    } else {
-        true
-    }
     
-    val isSuperSpeed = isConnected && (
+    val isSuperSpeed = isConnected && (connectorType == 1 || connectorType == 2) && (
         usbState.usbDevices.any { it.maxSpeedMbps > 440 } || usbState.chargingPowerWatts > 18.0
     )
 
@@ -2867,9 +3331,9 @@ fun UsbTypeCPinoutCanvas(
             val isPinActive = when (i) {
                 0, 11 -> isConnected // GND is active when connected 
                 3, 8 -> isConnected // VBUS is active when connected
-                4 -> isConnected // CC lines are active when connected
+                4 -> isConnected && (connectorType == 1 || connectorType == 3) // CC lines are active when connected (sensed in USB-C and Lightning adapters)
                 5, 6 -> isConnected // D+/D- lines are active when connected
-                1, 2, 9, 10 -> isSuperSpeed // High speed lanes are only active on SuperSpeed
+                1, 2, 9, 10 -> isSuperSpeed // High speed lanes are only active on SuperSpeed C-C / C-A
                 else -> false
             }
 

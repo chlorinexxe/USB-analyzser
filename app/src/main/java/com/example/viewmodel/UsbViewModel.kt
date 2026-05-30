@@ -23,8 +23,11 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
     val usbState: StateFlow<UsbStateInfo> = _usbState.asStateFlow()
 
     // Interactive profiler variables
-    private val _connectorType = MutableStateFlow(0) // 0: USB-C to C, 1: USB-A to C, 2: Micro/Other
+    private val _connectorType = MutableStateFlow(0) // 0: Auto-Detect, 1: Type-C to Type-C, 2: Type-C to Type-A, 3: Type-C to Lightning, 4: Type-C to Micro-USB
     val connectorType: StateFlow<Int> = _connectorType.asStateFlow()
+
+    private val _effectiveConnectorType = MutableStateFlow(1) // 1: C-C, 3: C-Lightning, 2: C-A, 4: C-Micro
+    val effectiveConnectorType: StateFlow<Int> = _effectiveConnectorType.asStateFlow()
 
     private val _eMarkerIndicator = MutableStateFlow(0) // 0: Unknown, 1: Yes (Logo/Label), 2: No
     val eMarkerIndicator: StateFlow<Int> = _eMarkerIndicator.asStateFlow()
@@ -169,16 +172,21 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
 
             // Calculate mock parameters modeled from state + wizard input
             val state = _usbState.value
-            val isCcCard = _connectorType.value == 0
-            val hasEmarker = _eMarkerIndicator.value == 1
-            val supportsDisplay = _videoAltMode.value == 1
-            val isUsab = _connectorType.value == 1
+            val effType = _effectiveConnectorType.value
+            val isCcCard = effType == 1
+            val isUsab = effType == 2
+            val isLightning = effType == 3
+            val isMicro = effType == 4
+            val hasEmarker = _eMarkerIndicator.value == 1 || (isCcCard && (state.chargingPowerWatts > 60.0 || state.usbDevices.any { it.maxSpeedMbps > 440 }))
+            val supportsDisplay = _videoAltMode.value == 1 || (isCcCard && state.usbDevices.any { it.maxSpeedMbps > 440 })
 
             // Simulated real-world diagnostics
             val estResistance = when {
+                isLightning -> 0.14 + (Math.random() * 0.04) // MFi contact pads resistance
                 hasEmarker -> 0.07 + (Math.random() * 0.02) // Premium, low resistance
                 isCcCard -> 0.11 + (Math.random() * 0.03)   // Standard C-C
                 isUsab -> 0.18 + (Math.random() * 0.08)     // High resistance A-C
+                isMicro -> 0.22 + (Math.random() * 0.06)    // Legacy Micro port
                 else -> 0.25 + (Math.random() * 0.15)
             }
 
@@ -191,16 +199,26 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
                 _perceivedSpeed.value == 0 -> 10000.0 // 10 Gbps
                 isCcCard && _perceivedSpeed.value == 1 -> 480.0
                 isUsab && _perceivedSpeed.value == 1 -> 480.0
+                isLightning -> 480.0 // Standard Type-C to Lightning limits
+                isMicro -> 480.0
                 else -> 12.0 // slow speed USB 1.1 or audio
             }
 
-            val matchedClassification = when {
-                supportsDisplay -> "USB4 / Thunderbolt 4 (Active E-Mark)"
-                hasEmarker && isCcCard -> "USB 3.2 Gen 2 Type-C (Hi-Power E-Mark)"
-                isCcCard && _perceivedSpeed.value == 0 -> "USB 3.2 Gen 1 Type-C (SuperSpeed 5Gbps)"
-                isCcCard -> "USB 2.0 Type-C to C (Charge & Sync)"
-                isUsab && _perceivedSpeed.value == 0 -> "USB 3.1 Type-A to C (SuperSpeed)"
-                isUsab -> "USB 2.0 Type-A to C Basic"
+            val matchedClassification = when (effType) {
+                1 -> {
+                    if (supportsDisplay) "Type-C to Type-C (Thunderbolt 4 / USB4)"
+                    else if (hasEmarker) "Type-C to Type-C Core (Hi-Power E-Mark)"
+                    else "Type-C to Type-C basic Charge & Sync"
+                }
+                2 -> {
+                    if (_perceivedSpeed.value == 0) "USB 3.1 Type-A to C Legacy High Speed"
+                    else "USB 2.0 Type-A to C Basic"
+                }
+                3 -> {
+                    if (state.chargingPowerWatts > 12.0) "Type-C to Lightning MFi Fast Charge (PD)"
+                    else "Type-C to Lightning Standard Sync"
+                }
+                4 -> "Type-C to Micro-USB Legacy OTG Sync"
                 else -> "Standard Charging Adapter Connection"
             }
 
@@ -323,19 +341,36 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             true // default base layout
         }
-        val isAc = !isCc
-        val isOther = false
+
+        // Auto-detect Apple check
+        val isAppleDeviceConnected = state.isConnected && (
+            state.usbDevices.any { it.vendorId.equals("0x05AC", ignoreCase = true) || it.manufacturer.contains("Apple", ignoreCase = true) || it.product.contains("iPhone", ignoreCase = true) || it.product.contains("iPad", ignoreCase = true) }
+        )
+
+        val effectiveType = when (_connectorType.value) {
+            0 -> { // Auto-Detect
+                if (isAppleDeviceConnected) 3 // C to Lightning
+                else if (isCc) 1 // C to C
+                else 2 // C to A
+            }
+            1 -> 1 // Forced C to C
+            2 -> 2 // Forced C to A
+            3 -> 3 // Forced C to Lightning
+            4 -> 4 // Forced C to Micro
+            else -> 1
+        }
+        _effectiveConnectorType.value = effectiveType
 
         // E-Marker presence is dynamically determined. Unmarked C-C cables are limited to 3A max (60W).
         // If wattage is > 60W or we detect active high-speed USB accessories, signature is verified!
-        val emarkYes = state.isConnected && isCc && (
+        val emarkYes = state.isConnected && (effectiveType == 1) && (
             state.chargingPowerWatts > 60.0 || state.maxPowerWatts > 60.0 || state.usbDevices.any { it.maxSpeedMbps > 440 }
         )
         val emarkNo = state.isConnected && !emarkYes
         val emarkUnk = !state.isConnected
 
         // DisplayPort Alternate Mode is auto-estimated based on active chip verification
-        val videoYes = state.isConnected && emarkYes && isCc
+        val videoYes = state.isConnected && emarkYes && (effectiveType == 1)
         val videoNo = state.isConnected && !videoYes
         val videoUnk = !state.isConnected
 
@@ -347,103 +382,105 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
         val speedSlow = !state.isConnected
 
         // We estimate matching probability scores for five typical standard cables:
-        val list = listOf(
-            // 1. USB4 Gen 3 Type-C to C (40 Gbps, 100/240W, DP Alt Mode, E-Mark)
-            run {
-                var p = 0.0
-                if (isCc) p += 0.4
-                if (emarkYes) p += 0.2
-                if (videoYes) p += 0.3
-                if (speedFast) p += 0.1
-                if (isAc || isOther) p = 0.0
-                CableClassification(
-                    name = "USB4 Gen 3 / Thunderbolt 4 (High-Speed Active)",
-                    maxSpeedGbps = 40.0,
-                    maxPowerWatts = if (emarkYes) 240 else 60,
-                    isFullFeature = true,
-                    videoAltModeSupported = true,
-                    typicalWiringText = "Fully Shielded Coaxial Cores with Active E-Marker microcontroller.",
-                    physicalPinsRequired = "24 Pins Complete Layout",
-                    compatibilityRating = p.coerceIn(0.01, 0.99)
-                )
-            },
-            // 2. USB 3.2 Gen 2 Type-C (10 Gbps, DP-Alt compatible, standard power 60W or 100W with emark)
-            run {
-                var p = 0.0
-                if (isCc) p += 0.4
-                if (emarkUnk) p += 0.1 else if (emarkNo) p += 0.1
-                if (videoYes) p += 0.3
-                if (speedFast) p += 0.2
-                if (isAc || isOther) p = 0.0
-                CableClassification(
-                    name = "USB 3.2 Gen 2 Type-C (SuperSpeed+ 10Gbps)",
-                    maxSpeedGbps = 10.0,
-                    maxPowerWatts = if (emarkYes) 100 else 60,
-                    isFullFeature = true,
-                    videoAltModeSupported = true,
-                    typicalWiringText = "Stitched signal lanes, dual shielded twisted pairs.",
-                    physicalPinsRequired = "22-24 Pins Configured",
-                    compatibilityRating = p.coerceIn(0.01, 0.99)
-                )
-            },
-            // 3. USB 2.0 Type-C to Type-C (480 Mbps, basic charge & sync, no video support)
-            run {
-                var p = 0.0
-                if (isCc) p += 0.4
-                if (emarkNo) p += 0.2 else if (emarkUnk) p += 0.1
-                if (videoNo) p += 0.2
-                if (speedStd) p += 0.2
-                if (isAc || isOther) p = 0.0
-                CableClassification(
-                    name = "USB 2.0 Type-C to Type-C Core",
-                    maxSpeedGbps = 0.48,
-                    maxPowerWatts = if (emarkYes) 100 else 60,
-                    isFullFeature = false,
-                    videoAltModeSupported = false,
-                    typicalWiringText = "VBUS, GND, CC1, CC2, and D+/D- pins wired. No high-speed Tx/Rx matrices.",
-                    physicalPinsRequired = "12 Pins Compact Layout",
-                    compatibilityRating = p.coerceIn(0.01, 0.99)
-                )
-            },
-            // 4. USB 3.1 Type-A to Type-C (5/10 Gbps SuperSpeed, charging locked to standard USB profiles)
-            run {
-                var p = 0.0
-                if (isAc) p += 0.5
-                if (speedFast) p += 0.3
-                if (videoNo) p += 0.2
-                if (isCc || isOther) p = 0.0
-                val customMaxPowerWatts = if (state.maxPowerWatts > 0.0) state.maxPowerWatts.toInt() else 15
-                CableClassification(
-                    name = "USB 3.1 Type-A to Type-C Legacy High Speed",
-                    maxSpeedGbps = 5.0,
-                    maxPowerWatts = customMaxPowerWatts,
-                    isFullFeature = false,
-                    videoAltModeSupported = false,
-                    typicalWiringText = "Legacy compatibility pull-up resistor (56kΩ) wired to CC lines.",
-                    physicalPinsRequired = "9 Pins Legacy Blue Core",
-                    compatibilityRating = p.coerceIn(0.01, 0.99)
-                )
-            },
-            // 5. USB 2.0 Type-A to Type-C Basic
-            run {
-                var p = 0.0
-                if (isAc) p += 0.5
-                if (speedStd) p += 0.3
-                if (videoNo) p += 0.2
-                if (isCc || isOther) p = 0.0
-                val customMaxPowerWatts = if (state.maxPowerWatts > 0.0) state.maxPowerWatts.toInt() else 15
-                CableClassification(
-                    name = "USB 2.0 Type-A to Type-C Basic Utility",
-                    maxSpeedGbps = 0.48,
-                    maxPowerWatts = customMaxPowerWatts,
-                    isFullFeature = false,
-                    videoAltModeSupported = false,
-                    typicalWiringText = "Standard charge & basic data lines. Minimal shielding, standard resistance.",
-                    physicalPinsRequired = "4-5 Pins (Power + Legacy Data)",
-                    compatibilityRating = p.coerceIn(0.01, 0.99)
+        val list = when (effectiveType) {
+            1 -> { // Type-C to Type-C (C to C)
+                listOf(
+                    CableClassification(
+                        name = "Type-C to Type-C (Thunderbolt 4 / USB4)",
+                        maxSpeedGbps = 40.0,
+                        maxPowerWatts = if (emarkYes) 240 else 60,
+                        isFullFeature = true,
+                        videoAltModeSupported = true,
+                        typicalWiringText = "Premium coaxial high-speed TX/RX lines with embedded E-Marker chip, supporting full display alternate routing.",
+                        physicalPinsRequired = "24 Pins Symmetric Layout",
+                        compatibilityRating = if (emarkYes || speedFast) 0.95 else 0.55
+                    ),
+                    CableClassification(
+                        name = "Type-C to Type-C (USB 3.2 Gen 2 SuperSpeed)",
+                        maxSpeedGbps = 10.0,
+                        maxPowerWatts = if (emarkYes) 100 else 60,
+                        isFullFeature = true,
+                        videoAltModeSupported = true,
+                        typicalWiringText = "Shielded dual-simplex twisted wire structure. Ideal for high-speed file storage transports.",
+                        physicalPinsRequired = "22-24 Pins Configured",
+                        compatibilityRating = if (speedFast && !emarkYes) 0.90 else if (!speedFast && !emarkYes) 0.65 else 0.45
+                    ),
+                    CableClassification(
+                        name = "Type-C to Type-C (USB 2.0 Charge & Sync)",
+                        maxSpeedGbps = 0.48,
+                        maxPowerWatts = if (emarkYes) 100 else 60,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "VBUS, GND, CC and legacy D+/D- pins wired. Lacks high-frequency differential transceiver lanes.",
+                        physicalPinsRequired = "12 Pins Compact Layout",
+                        compatibilityRating = if (speedStd) 0.85 else 0.30
+                    )
                 )
             }
-        ).sortedByDescending { it.compatibilityRating }
+            2 -> { // Type-C to Type-A (C to A)
+                listOf(
+                    CableClassification(
+                        name = "Type-C to Type-A (USB 3.1 SuperSpeed)",
+                        maxSpeedGbps = 5.0,
+                        maxPowerWatts = 15,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "Legacy asymmetric USB-A socket interface. Fully equipped with a standard 56kΩ pull-up resistor to assure safe device load-draw detection.",
+                        physicalPinsRequired = "9 Pin USB-A / 12-24 Pin USB-C Hybrid",
+                        compatibilityRating = if (speedFast) 0.95 else 0.50
+                    ),
+                    CableClassification(
+                        name = "Type-C to Type-A (USB 2.0 Legacy Standard)",
+                        maxSpeedGbps = 0.48,
+                        maxPowerWatts = 15,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "Standard legacy backup charging cable. Simple power and differential D+/D- lines, commonly bundled with legacy wall bricks.",
+                        physicalPinsRequired = "4 Pin USB-A / 4-12 Pin USB-C Hybrid",
+                        compatibilityRating = if (speedStd) 0.90 else 0.40
+                    )
+                )
+            }
+            3 -> { // Type-C to Lightning (C to Lightning)
+                listOf(
+                    CableClassification(
+                        name = "Type-C to Lightning (MFi Fast Charge PD)",
+                        maxSpeedGbps = 0.48,
+                        maxPowerWatts = 27,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "Made For iPhone (MFi) certified Lightning integration. Supports USB-PD Power Handshake profiles (9V rail fast-charging) for Apple iOS accessories.",
+                        physicalPinsRequired = "8 Pin C94 MFi Chipset Layout",
+                        compatibilityRating = if (state.chargingPowerWatts > 12.0 || state.powerSource == "AC Fast Charger") 0.95 else 0.60
+                    ),
+                    CableClassification(
+                        name = "Type-C to Lightning (Standard Sync)",
+                        maxSpeedGbps = 0.48,
+                        maxPowerWatts = 12,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "Legacy C48/C89 connector design. Limited to standard charging profiles and 480 Mbps legacy differential transfers.",
+                        physicalPinsRequired = "8 Pin MFi Chipset Layout",
+                        compatibilityRating = if (state.chargingPowerWatts <= 12.0) 0.90 else 0.40
+                    )
+                )
+            }
+            4 -> { // Type-C to Micro-USB (C to Micro)
+                listOf(
+                    CableClassification(
+                        name = "Type-C to Micro-USB (Legacy OTG Sync)",
+                        maxSpeedGbps = 0.48,
+                        maxPowerWatts = 10,
+                        isFullFeature = false,
+                        videoAltModeSupported = false,
+                        typicalWiringText = "Legacy standard bridge connection. Adapts the modern USB-C multiplexed layout for older micro-USB devices or direct legacy digital accessories.",
+                        physicalPinsRequired = "5 Pin Micro-USB Layout",
+                        compatibilityRating = 0.95
+                    )
+                )
+            }
+            else -> emptyList()
+        }.sortedByDescending { it.compatibilityRating }
 
         _classifications.value = list
     }

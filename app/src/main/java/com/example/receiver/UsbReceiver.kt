@@ -34,15 +34,31 @@ class UsbReceiver(
             // Register standard implicit android hardware action
             addAction("android.hardware.usb.action.USB_STATE")
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, filter)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                    isRegistered = true
+                } catch (e: SecurityException) {
+                    Log.w("UsbReceiver", "Failed to register with RECEIVER_EXPORTED, trying RECEIVER_NOT_EXPORTED", e)
+                    context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                    isRegistered = true
+                }
+            } else {
+                context.registerReceiver(receiver, filter)
+                isRegistered = true
+            }
+        } catch (e: Exception) {
+            Log.e("UsbReceiver", "Failed to register broadcast receiver entirely", e)
         }
-        isRegistered = true
 
         // Initial fetch
-        val initialIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val initialIntent = try {
+            context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        } catch (e: Exception) {
+            Log.e("UsbReceiver", "Failed to fetch initial battery sticky broadcast", e)
+            null
+        }
         if (initialIntent != null) {
             updateInfo(initialIntent)
         }
@@ -211,6 +227,10 @@ class UsbReceiver(
                 Log.e("UsbReceiver", "Error reading usb device list", e)
             }
 
+            val pm = context.packageManager
+            val hostFeat = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_USB_HOST)
+            val accFeat = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_USB_ACCESSORY)
+
             onUpdate(
                 UsbStateInfo(
                     isConnected = isConnected,
@@ -227,6 +247,8 @@ class UsbReceiver(
                     isConfigured = isConfigured,
                     isUnlocked = isUnlocked,
                     usbDevices = usbDevicesList,
+                    hasUsbHostFeature = hostFeat,
+                    hasUsbAccessoryFeature = accFeat,
                     timestamp = System.currentTimeMillis()
                 )
             )

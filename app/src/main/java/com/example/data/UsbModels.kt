@@ -39,6 +39,8 @@ data class UsbStateInfo(
     val isConfigured: Boolean = false,
     val isUnlocked: Boolean = false,
     val usbDevices: List<UsbDeviceDetails> = emptyList(),
+    val hasUsbHostFeature: Boolean = false,
+    val hasUsbAccessoryFeature: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )
 
