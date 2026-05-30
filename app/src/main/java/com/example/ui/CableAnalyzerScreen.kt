@@ -337,6 +337,7 @@ fun CableAnalyzerScreen(viewModel: UsbViewModel) {
                                 onResetSweep = { viewModel.resetDiagnostics() }
                             )
                             3 -> SpecsTab(
+                                usbState = usbState,
                                 themePrimary = themePrimary,
                                 themeSecondary = themeSecondary,
                                 themeAccent = themeAccent,
@@ -521,12 +522,28 @@ fun DashboardTab(
     val bestMatch = remember(usbState, classifications) {
         classifications.firstOrNull { it.compatibilityRating > 0.45 } ?: classifications.firstOrNull()
     }
+    val powerHistory by viewModel.powerHistory.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        // Section A: Cable Matrix Header
+        item {
+            Text(
+                text = "⚡ CONNECTED CABLE ANALYSIS MATRIX",
+                color = themePrimary,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.2.sp,
+                    fontSize = 11.sp
+                ),
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp)
+            )
+        }
+
         // High Fidelity "Frosted Glass" Cable Hero Card
         item {
             val pulseTransition = rememberInfiniteTransition(label = "PulseEffect")
@@ -542,6 +559,9 @@ fun DashboardTab(
 
             val animatedGlowSize = (100 + (pulseScale * 18)).dp
             val animatedGlowAlpha = 0.25f - (pulseScale * 0.15f)
+
+            val hasStorage = usbState.usbDevices.any { it.isStorage }
+            val connectorType by viewModel.connectorType.collectAsState()
 
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -577,7 +597,7 @@ fun DashboardTab(
                                         )
                                 )
                             }
-                            // Inner Glass Plate
+                            // Inner Glass Plate with Dynamic USB icons instead of general share button
                             Box(
                                 modifier = Modifier
                                     .size(80.dp)
@@ -592,16 +612,44 @@ fun DashboardTab(
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share, // Connection sharing connectivity symbol
-                                    contentDescription = "USB Connection Status Icon",
-                                    tint = if (usbState.isConnected) themePrimary else Color.White.copy(alpha = 0.35f),
-                                    modifier = Modifier.size(34.dp)
+                                DynamicUsbIcon(
+                                    isConnected = usbState.isConnected,
+                                    connectorType = connectorType,
+                                    isSuperSpeed = usbState.usbDevices.any { it.maxSpeedMbps > 440 } || hasStorage,
+                                    isStorageConnected = hasStorage,
+                                    themePrimary = themePrimary,
+                                    themeAccent = themeAccent,
+                                    modifier = Modifier.size(54.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        // Sparking Flow Animation Line inside charging cable
+                        if (usbState.isConnected) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "ACTIVE SIGNAL FLOW CHANNEL",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 7.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = themeAccent.copy(alpha = 0.7f),
+                                    letterSpacing = 1.sp
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            FlowingElectronPaths(
+                                isConnected = usbState.isConnected,
+                                themePrimary = themePrimary,
+                                themeAccent = themeAccent,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp)
+                                    .padding(horizontal = 24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        } else {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         // Dynamic cable detection naming
                         val titleText = if (usbState.isConnected) {
@@ -622,7 +670,7 @@ fun DashboardTab(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 textAlign = TextAlign.Center,
-                                letterSpacing = (-0.3).sp
+                                letterSpacing = (-0.5).sp
                             ),
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
@@ -644,7 +692,7 @@ fun DashboardTab(
                             Spacer(modifier = Modifier.height(20.dp))
 
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 // 1. Speed Badge
@@ -658,9 +706,9 @@ fun DashboardTab(
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(
-                                            imageVector = Icons.Default.Settings,
+                                            imageVector = Icons.Default.Lock, // Bandwidth cap icon
                                             contentDescription = "Speed Icon",
-                                            tint = CyberTeal,
+                                            tint = themePrimary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
@@ -696,14 +744,14 @@ fun DashboardTab(
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(
-                                            imageVector = Icons.Default.Star,
+                                            imageVector = Icons.Default.KeyboardArrowUp, // Watt level icon 
                                             contentDescription = "Power Rating",
-                                            tint = CyberPink,
+                                            tint = themeAccent,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text(
-                                            text = "MAX CHARGING",
+                                            text = "MAX POWER",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -713,7 +761,7 @@ fun DashboardTab(
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = "${bestMatch.maxPowerWatts} Watts",
+                                            text = "${bestMatch.maxPowerWatts}W Limit",
                                             style = MaterialTheme.typography.bodyMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontFamily = FontFamily.Monospace,
@@ -736,7 +784,7 @@ fun DashboardTab(
                                         Icon(
                                             imageVector = Icons.Default.PlayArrow,
                                             contentDescription = "Alt Mode",
-                                            tint = CyberPurple,
+                                            tint = themeSecondary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
@@ -755,7 +803,7 @@ fun DashboardTab(
                                             style = MaterialTheme.typography.bodyMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = if (bestMatch.videoAltModeSupported) CyberPurple else Color.White.copy(alpha = 0.6f)
+                                                color = if (bestMatch.videoAltModeSupported) themeSecondary else Color.White.copy(alpha = 0.6f)
                                             )
                                         )
                                     }
@@ -763,125 +811,6 @@ fun DashboardTab(
                             }
                         }
                     }
-                }
-            }
-        }
-
-        // High Speed Telemetry Power Gauge Grid Row
-        item {
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "POWER DIAGNOSTICS",
-                    color = CyberTeal,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    ),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PowerIndicatorGauge(
-                        value = usbState.chargingPowerWatts,
-                        maxLimit = 100.0,
-                        unit = "W",
-                        label = "Sensed Power",
-                        color = CyberTeal,
-                        modifier = Modifier.size(110.dp)
-                    )
-
-                    Column(
-                        modifier = Modifier.padding(start = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        MetricParameterRow(
-                            icon = Icons.Default.Info,
-                            title = "Power Sourced",
-                            value = "${String.format("%.2f", usbState.chargingPowerWatts)} W",
-                            color = CyberTeal
-                        )
-                        MetricParameterRow(
-                            icon = Icons.Default.PlayArrow,
-                            title = "Live Current",
-                            value = "${String.format("%.3f", usbState.chargingCurrentAmperes)} A",
-                            color = Color.White
-                        )
-                        MetricParameterRow(
-                            icon = Icons.Default.Check,
-                            title = "Volts Measured",
-                            value = "${String.format("%.2f", usbState.chargingVoltageVolts)} V",
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-        }
-
-        // Connection Technical Specs Matrix Card
-        item {
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "HARDWARE TRANSCEIVER SIGNALS",
-                    color = CyberPink,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    ),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            SignalCheckbox("Physical Port Connected", usbState.isConnected, CyberTeal)
-                        }
-                        Box(modifier = Modifier.weight(1f)) {
-                            SignalCheckbox("Host/OTG Protocol", usbState.isHostConnected, CyberTeal)
-                        }
-                    }
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            SignalCheckbox("Lanes Configured", usbState.isConfigured, CyberPink)
-                        }
-                        Box(modifier = Modifier.weight(1f)) {
-                            SignalCheckbox("Port Unlocked", usbState.isUnlocked, CyberPink)
-                        }
-                    }
-
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
-
-                    InteractiveParameterRow(
-                        label = "Current Source Profile",
-                        value = usbState.powerSource,
-                        valueColor = if (usbState.isConnected) CyberTeal else Color.White
-                    )
-
-                    InteractiveParameterRow(
-                        label = "Negotiated Voltage Cap",
-                        value = if (usbState.maxVoltageVolts > 0) "${usbState.maxVoltageVolts}V" else "Detected Dynamically",
-                        valueColor = Color.White
-                    )
-
-                    InteractiveParameterRow(
-                        label = "Negotiated Current Cap",
-                        value = if (usbState.maxCurrentAmperes > 0) "${usbState.maxCurrentAmperes}A" else "Detected Dynamically",
-                        valueColor = Color.White
-                    )
-
-                    InteractiveParameterRow(
-                        label = "Negotiated Wattage Profile",
-                        value = if (usbState.maxPowerWatts > 0) "${usbState.maxPowerWatts}W Limit" else "Calculated Live",
-                        valueColor = Color.White
-                    )
                 }
             }
         }
@@ -895,8 +824,8 @@ fun DashboardTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "USB INTERFACE ACCESSORIES (${usbState.usbDevices.size})",
-                        color = CyberPurple,
+                        text = "USB ACCESSORY INTERFACE (${usbState.usbDevices.size})",
+                        color = themeSecondary,
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -904,12 +833,12 @@ fun DashboardTab(
                         )
                     )
                     GlassPill(
-                        text = if (usbState.usbDevices.isNotEmpty()) "OTG ACTIVE" else "Host Empty",
-                        color = if (usbState.usbDevices.isNotEmpty()) CyberTeal else Color.White.copy(alpha = 0.4f)
+                        text = if (usbState.usbDevices.isNotEmpty()) "LINK ACTIVE" else "Empty Bus",
+                        color = if (usbState.usbDevices.isNotEmpty()) themePrimary else Color.White.copy(alpha = 0.4f)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (usbState.usbDevices.isEmpty()) {
                     Box(
@@ -927,7 +856,7 @@ fun DashboardTab(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "No external USB devices detected via this connection.\nAttach an OTG storage device or legacy drive to inspect its hardware structures.",
+                                text = "No external USB devices detected via this connection.\nAttach an OTG storage device or legacy drive to inspect physical configurations.",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontSize = 11.sp,
                                     color = Color.White.copy(alpha = 0.45f),
@@ -961,7 +890,7 @@ fun DashboardTab(
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.List,
                                             contentDescription = "Device Type",
-                                            tint = if (dev.isStorage) CyberTeal else CyberPurple,
+                                            tint = if (dev.isStorage) themePrimary else themeSecondary,
                                             modifier = Modifier.size(20.dp)
                                         )
                                         Column {
@@ -987,7 +916,7 @@ fun DashboardTab(
 
                                     GlassPill(
                                         text = if (dev.isStorage) "DISK DRIVE" else "ACCESSORY",
-                                        color = if (dev.isStorage) CyberTeal else CyberPurple
+                                        color = if (dev.isStorage) themePrimary else themeSecondary
                                     )
                                 }
 
@@ -997,7 +926,7 @@ fun DashboardTab(
                                     modifier = Modifier.padding(vertical = 10.dp)
                                 )
 
-                                // Specific storage drive parameters display as asked by user!
+                                // Specific storage drive parameters display
                                 if (dev.isStorage) {
                                     Column(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1007,27 +936,27 @@ fun DashboardTab(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            StorageInfoItem("BRAND", dev.brand, CyberTeal)
-                                            StorageInfoItem("USB PROTOCOL", dev.usbVersion, Color.White)
+                                            StorageInfoItem("BRAND / CHIPSET ID", dev.brand, themePrimary)
+                                            StorageInfoItem("USB PROTOCOL CLASS", dev.usbVersion, Color.White)
                                         }
                                         
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            StorageInfoItem("BUS BANDWIDTH", dev.speedClassString, Color.White)
-                                            StorageInfoItem("FS FORMAT", dev.fileSystem, Color.White)
+                                            StorageInfoItem("MAX BUS SPEED", dev.speedClassString, Color.White)
+                                            StorageInfoItem("FILE SYSTEM FORMAT", dev.fileSystem, Color.White)
                                         }
 
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            StorageInfoItem("CAPACITY", if (dev.storageCapacityGB >= 1024) "${dev.storageCapacityGB / 1024} Terabyte (TB)" else "${dev.storageCapacityGB} Gigabytes (GB)", CyberPink)
+                                            StorageInfoItem("SECTOR CAPACITY", if (dev.storageCapacityGB >= 1024) "${dev.storageCapacityGB / 1024} Terabyte (TB)" else "${dev.storageCapacityGB} Gigabytes (GB)", themeAccent)
                                             StorageInfoItem(
-                                                "DEVICE AGE", 
+                                                "FABRICATIVE LIFETIME", 
                                                 "Mfg ${dev.releaseYear} (${dev.estimatedAgeYears} years old)", 
-                                                if (dev.estimatedAgeYears > 8) CyberPink else CyberTeal
+                                                if (dev.estimatedAgeYears > 8) themeAccent else themePrimary
                                             )
                                         }
                                     }
@@ -1062,12 +991,118 @@ fun DashboardTab(
             }
         }
 
-        // Live battery metrics
+        // Section B: Beautiful Glowing Divider differentiating Phone specs & connected USB cable!
+        item {
+            GlowingNeonDivider(
+                label = "📱 RECEIVING HANDSET SYSTEM TERMINAL",
+                themePrimary = themePrimary,
+                themeAccent = themeAccent
+            )
+        }
+
+        // High Speed Telemetry Power Gauge Grid Row
+        item {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "POWER STATION COUPLER",
+                        color = themePrimary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                    Text(
+                        text = "DYNAMIC FEED",
+                        color = themeAccent,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PowerIndicatorGauge(
+                        value = usbState.chargingPowerWatts,
+                        maxLimit = 100.0,
+                        unit = "W",
+                        label = "Sensed Power",
+                        color = themePrimary,
+                        modifier = Modifier.size(110.dp)
+                    )
+
+                    Column(
+                        modifier = Modifier.padding(start = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricParameterRow(
+                            icon = Icons.Default.Info,
+                            title = "Power Charged",
+                            value = "${String.format("%.2f", usbState.chargingPowerWatts)} W",
+                            color = themePrimary
+                        )
+                        MetricParameterRow(
+                            icon = Icons.Default.PlayArrow,
+                            title = "Current Draw",
+                            value = "${String.format("%.3f", usbState.chargingCurrentAmperes)} A",
+                            color = Color.White
+                        )
+                        MetricParameterRow(
+                            icon = Icons.Default.Check,
+                            title = "Voltage Rail",
+                            value = "${String.format("%.2f", usbState.chargingVoltageVolts)} V",
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Explanatory Definition hints helping user digest phone stats purposes
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "ℹ️ UNDERSTANDING TELEMETRY CONTEXT",
+                        color = themeAccent,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                    Text(
+                        text = "These numbers indicate how much electrical power is successfully crossing the connector boundaries. Resistance or sub-par conductor alignment restricts current flow (Amps) and forces a voltage drop across the pins.",
+                        color = Color.White.copy(alpha = 0.5f),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 13.sp)
+                    )
+                }
+            }
+        }
+
+        // Connection Technical Specs Matrix Card
         item {
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "RECEIVING THERMAL & CAPACITY SENSORS",
-                    color = Color.White.copy(alpha = 0.7f),
+                    text = "HARDWARE TRANSCEIVER SIGNALS",
+                    color = themeAccent,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
@@ -1075,6 +1110,84 @@ fun DashboardTab(
                     ),
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("Physical Port Wired", usbState.isConnected, themePrimary)
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("Host/OTG Protocol", usbState.isHostConnected, themePrimary)
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("Lanes Configured", usbState.isConfigured, themeAccent)
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            SignalCheckbox("Port Guard Unlocked", usbState.isUnlocked, themeAccent)
+                        }
+                    }
+
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+
+                    InteractiveParameterRow(
+                        label = "Power Sourcing Adapter",
+                        value = usbState.powerSource,
+                        valueColor = if (usbState.isConnected) themePrimary else Color.White
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Dynamic Voltage Cap",
+                        value = if (usbState.maxVoltageVolts > 0) "${usbState.maxVoltageVolts}V max" else "Negotiated dynamically",
+                        valueColor = Color.White
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Dynamic Current Cap",
+                        value = if (usbState.maxCurrentAmperes > 0) "${usbState.maxCurrentAmperes}A max" else "Calculated line safety limit",
+                        valueColor = Color.White
+                    )
+
+                    InteractiveParameterRow(
+                        label = "Dynamic Power Threshold",
+                        value = if (usbState.maxPowerWatts > 0) "${usbState.maxPowerWatts}W Limit" else "Monitored on continuous sweep",
+                        valueColor = Color.White
+                    )
+                }
+            }
+        }
+
+        // Receiving Thermal & Capacity Sensors (The battery stats)
+        item {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "THERMAL & PHYSICAL BATTERY SPECIFICATIONS",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                    Text(
+                        text = "PHONE DYNAMICS",
+                        color = themeSecondary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1086,7 +1199,7 @@ fun DashboardTab(
                             style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.45f))
                         )
                         Text(
-                            text = "${usbState.batteryLevel}% Charged",
+                            text = "${usbState.batteryLevel}% Status",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -1100,30 +1213,44 @@ fun DashboardTab(
                             style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.45f))
                         )
                         Text(
-                            text = "${usbState.batteryTemperatureCelsius}°C",
+                            text = "${usbState.batteryTemperatureCelsius}°C Normal",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = if (usbState.batteryTemperatureCelsius > 40) CyberPink else CyberTeal
+                                color = if (usbState.batteryTemperatureCelsius > 40) themeAccent else themePrimary
                             )
                         )
                     }
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Stability Status",
+                            text = "Safety Status",
                             style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.45f))
                         )
                         Text(
-                            text = if (usbState.batteryTemperatureCelsius < 36) "NOMINAL" else "WARNING: COMPRESS",
+                            text = if (usbState.batteryTemperatureCelsius < 38) "NOMINAL SAFE" else "THERMAL LOCK",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (usbState.batteryTemperatureCelsius < 36) CyberTeal else CyberPink
+                                color = if (usbState.batteryTemperatureCelsius < 38) themePrimary else themeAccent
                             )
                         )
                     }
                 }
             }
+        }
+
+        // Premium Real-time Power Consumptions Oscilloscope Graph at Bottom!
+        item {
+            BatteryTelemetryGraph(
+                powerHistory = powerHistory,
+                batteryLevel = usbState.batteryLevel,
+                batteryTemp = usbState.batteryTemperatureCelsius,
+                themePrimary = themePrimary,
+                themeAccent = themeAccent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+            )
         }
     }
 }
@@ -1269,7 +1396,7 @@ fun SignalCheckbox(label: String, checked: Boolean, color: Color) {
             if (checked) {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(6.0.dp)
                         .clip(RoundedCornerShape(1.dp))
                         .background(color)
                         .align(Alignment.Center)
@@ -1308,6 +1435,465 @@ fun InteractiveParameterRow(label: String, value: String, valueColor: Color) {
                 textAlign = TextAlign.End
             )
         )
+    }
+}
+
+// Custom Dynamic USB physical representation icon
+@Composable
+fun DynamicUsbIcon(
+    isConnected: Boolean,
+    connectorType: Int,
+    isSuperSpeed: Boolean,
+    isStorageConnected: Boolean,
+    themePrimary: Color,
+    themeAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "RadarSync")
+    val angleRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "RadarAngle"
+    )
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val radius = size.minDimension / 1.9f
+        val center = Offset(w / 2f, h / 2f)
+
+        if (!isConnected) {
+            // Sweep scan arc
+            drawArc(
+                brush = Brush.sweepGradient(
+                    colors = listOf(themePrimary.copy(alpha = 0.40f), Color.Transparent)
+                ),
+                startAngle = angleRotation,
+                sweepAngle = 110f,
+                useCenter = true
+            )
+            // Center probe circle
+            drawCircle(
+                color = themePrimary,
+                center = center,
+                radius = 7.dp.toPx()
+            )
+            drawCircle(
+                color = Color.White,
+                center = center,
+                radius = 3.dp.toPx()
+            )
+        } else if (isStorageConnected) {
+            // Solid metal flash disk drive shape
+            val widthDisk = 24.dp.toPx()
+            val heightDisk = 42.dp.toPx()
+
+            drawRoundRect(
+                color = themeAccent.copy(alpha = 0.15f),
+                topLeft = Offset(center.x - widthDisk / 2f, center.y - heightDisk / 2f),
+                size = androidx.compose.ui.geometry.Size(widthDisk, heightDisk),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+            )
+            drawRoundRect(
+                color = themeAccent,
+                topLeft = Offset(center.x - widthDisk / 2f, center.y - heightDisk / 2f),
+                size = androidx.compose.ui.geometry.Size(widthDisk, heightDisk),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+
+            // Inner flashing LED
+            drawCircle(
+                color = themePrimary,
+                center = Offset(center.x, center.y + 10.dp.toPx()),
+                radius = 2.5.dp.toPx()
+            )
+
+            // Outer plug
+            drawRect(
+                color = Color.White.copy(alpha = 0.7f),
+                topLeft = Offset(center.x - 7.dp.toPx(), center.y - heightDisk / 2f - 4.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(14.dp.toPx(), 4.dp.toPx())
+            )
+        } else if (connectorType == 1) {
+            // Legacy USB-A male core
+            val boxW = 32.dp.toPx()
+            val boxH = 26.dp.toPx()
+
+            drawRoundRect(
+                color = themePrimary.copy(alpha = 0.1f),
+                topLeft = Offset(center.x - boxW / 2f, center.y - boxH / 2f),
+                size = androidx.compose.ui.geometry.Size(boxW, boxH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx())
+            )
+            drawRoundRect(
+                color = themePrimary,
+                topLeft = Offset(center.x - boxW / 2f, center.y - boxH / 2f),
+                size = androidx.compose.ui.geometry.Size(boxW, boxH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+
+            // SuperSpeed USB 3.0 Blue plastic core plate representation
+            drawRect(
+                color = Color(0xFF0D9488),
+                topLeft = Offset(center.x - boxW / 2f + 4.dp.toPx(), center.y - boxH / 2f + 4.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(boxW - 8.dp.toPx(), 6.dp.toPx())
+            )
+        } else {
+            // Symmetric physical Type-C plug illustration
+            val pillW = 46.dp.toPx()
+            val pillH = 22.dp.toPx()
+
+            drawRoundRect(
+                color = themePrimary.copy(alpha = 0.15f),
+                topLeft = Offset(center.x - pillW / 2f, center.y - pillH / 2f),
+                size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(pillH / 2f, pillH / 2f)
+            )
+            drawRoundRect(
+                color = themePrimary,
+                topLeft = Offset(center.x - pillW / 2f, center.y - pillH / 2f),
+                size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(pillH / 2f, pillH / 2f),
+                style = Stroke(width = 2.dp.toPx())
+            )
+
+            // Dynamic core copper leaf
+            drawRoundRect(
+                color = themeAccent,
+                topLeft = Offset(center.x - pillW / 2f + 8.dp.toPx(), center.y - 2.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(pillW - 16.dp.toPx(), 4.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx(), 2.dp.toPx())
+            )
+        }
+    }
+}
+
+// Breathtaking Charging Flow Electrodynamics Animation Waveform 
+@Composable
+fun FlowingElectronPaths(
+    isConnected: Boolean,
+    themePrimary: Color,
+    themeAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    if (!isConnected) {
+        Spacer(modifier = modifier)
+        return
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "ElectronPhase")
+    val flowPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "FlowPhase"
+    )
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val midY = h / 2f
+        val points = 50
+        val path = Path()
+
+        for (i in 0..points) {
+            val progress = i.toFloat() / points
+            val x = progress * w
+            val y = midY + sin(progress * 12f - flowPhase) * 6.dp.toPx()
+            if (i == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+
+        // Draw flowing neon cable wave line
+        drawPath(
+            path = path,
+            color = themePrimary,
+            style = Stroke(width = 2.dp.toPx())
+        )
+
+        // Draw scrolling glowing pulse dot representing electrons moving
+        val electronProgress = (flowPhase / (2f * Math.PI.toFloat())) % 1f
+        val eX = electronProgress * w
+        val eY = midY + sin(electronProgress * 12f - flowPhase) * 6.dp.toPx()
+
+        drawCircle(
+            color = themeAccent,
+            center = Offset(eX, eY),
+            radius = 6.dp.toPx()
+        )
+        drawCircle(
+            color = Color.White,
+            center = Offset(eX, eY),
+            radius = 2.5.dp.toPx()
+        )
+    }
+}
+
+// Section-separating neon line layout divider
+@Composable
+fun GlowingNeonDivider(
+    label: String,
+    themePrimary: Color,
+    themeAccent: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(Color.Transparent, themePrimary.copy(alpha = 0.4f))
+                    )
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .border(
+                    width = 0.5.dp,
+                    color = themeAccent.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = label,
+                color = themeAccent,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.2.sp
+                )
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(themePrimary.copy(alpha = 0.4f), Color.Transparent)
+                    )
+                )
+        )
+    }
+}
+
+// Advanced oscilloscope representation of power & battery statistics curve at bottom of dashboard
+@Composable
+fun BatteryTelemetryGraph(
+    powerHistory: List<UsbViewModel.HistoryTick>,
+    batteryLevel: Int,
+    batteryTemp: Double,
+    themePrimary: Color,
+    themeAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.02f), shape = RoundedCornerShape(16.dp))
+            .border(0.5.dp, Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(16.dp))
+            .padding(14.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "SYS REAL-TIME TELEMETRY VOLTAGE GRAPH",
+                        color = themePrimary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp,
+                            fontSize = 10.sp
+                        )
+                    )
+                    Text(
+                        text = "Pulsating physical current draws charted inside 1s updates",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.5.sp,
+                            color = Color.White.copy(alpha = 0.4f)
+                        )
+                    )
+                }
+
+                // Small battery system container badge
+                Box(
+                    modifier = Modifier
+                        .background(themeAccent.copy(alpha = 0.15f), shape = RoundedCornerShape(6.dp))
+                        .border(0.5.dp, themeAccent.copy(alpha = 0.4f), shape = RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "HEALTH: $batteryLevel% | ${batteryTemp}°C",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = themeAccent
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Graph canvas area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                if (powerHistory.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "AWAITING ACTIVE DATA PROBES FEED...",
+                            color = Color.White.copy(alpha = 0.2f),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp
+                            )
+                        )
+                    }
+                } else {
+                    val maxVal = remember(powerHistory) {
+                        (powerHistory.maxOfOrNull { it.powerWatts } ?: 5.0).coerceAtLeast(10.0)
+                    }
+
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+                        val pointsCount = powerHistory.size
+                        val stepX = w / (pointsCount - 1).coerceAtLeast(1)
+
+                        val path = Path()
+                        val fillPath = Path()
+
+                        powerHistory.forEachIndexed { idx, tick ->
+                            val x = idx * stepX
+                            val normalizeWatts = (tick.powerWatts / maxVal).coerceIn(0.0, 1.0)
+                            val y = h - (normalizeWatts * h * 0.82).toFloat() - 4.dp.toPx()
+
+                            if (idx == 0) {
+                                path.moveTo(x, y)
+                                fillPath.moveTo(x, h)
+                                fillPath.lineTo(x, y)
+                            } else {
+                                path.lineTo(x, y)
+                                fillPath.lineTo(x, y)
+                            }
+
+                            if (idx == pointsCount - 1) {
+                                fillPath.lineTo(x, h)
+                            }
+                        }
+
+                        // Gradient underlying filling curve
+                        drawPath(
+                            path = fillPath,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(themePrimary.copy(alpha = 0.15f), Color.Transparent),
+                                startY = 0f,
+                                endY = h
+                            )
+                        )
+
+                        // Highlight vector stroke
+                        drawPath(
+                            path = path,
+                            color = themePrimary,
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+
+                        // High fidelity active pulsing coordinate endpoint
+                        if (pointsCount > 0) {
+                            val lastIdx = pointsCount - 1
+                            val tick = powerHistory[lastIdx]
+                            val normalizeWatts = (tick.powerWatts / maxVal).coerceIn(0.0, 1.0)
+                            val finalX = lastIdx * stepX
+                            val finalY = h - (normalizeWatts * h * 0.82).toFloat() - 4.dp.toPx()
+
+                            drawCircle(
+                                color = themeAccent,
+                                center = Offset(finalX, finalY),
+                                radius = 5.dp.toPx()
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                center = Offset(finalX, finalY),
+                                radius = 2.dp.toPx()
+                            )
+                        }
+
+                        // Horizontal base coordinate markings
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.05f),
+                            start = Offset(0f, h),
+                            end = Offset(w, h),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Sub-metrics descriptions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "30s Telemetry Range Frame",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, color = Color.White.copy(alpha = 0.35f))
+                )
+
+                val lastPower = if (powerHistory.isNotEmpty()) powerHistory.last().powerWatts else 0.0
+                Text(
+                    text = "Active Waveform Load: ${String.format("%.2f", lastPower)}W",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 8.5.sp,
+                        color = themePrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+
+                Text(
+                    text = "Live Port Probing",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, color = Color.White.copy(alpha = 0.35f))
+                )
+            }
+        }
     }
 }
 
@@ -1946,11 +2532,20 @@ fun DiagnosticResultView(
 // TAB 4: TECHNICAL USB SPECIFICATION & PINOUT LAYOUT MAP
 @Composable
 fun SpecsTab(
+    usbState: UsbStateInfo,
     themePrimary: Color = Color(0xFF60A5FA),
     themeSecondary: Color = Color(0xFF818CF8),
     themeAccent: Color = Color(0xFFF472B6),
     layoutSelection: Int = 0
 ) {
+    val isConnected = usbState.isConnected
+    val isCc = isConnected && (
+        usbState.chargingPowerWatts > 15.0 || usbState.powerSource == "AC Fast Charger" || usbState.chargingCurrentAmperes > 1.5 || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
+    )
+    val isSuperSpeed = isConnected && (
+        usbState.usbDevices.any { it.maxSpeedMbps > 440 } || usbState.chargingPowerWatts > 18.0
+    )
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -1981,7 +2576,13 @@ fun SpecsTab(
                 )
 
                 // Render vector schematics of Type-C plug pins
-                UsbTypeCPinoutCanvas(modifier = Modifier.fillMaxWidth().height(90.dp))
+                UsbTypeCPinoutCanvas(
+                    usbState = usbState,
+                    themePrimary = themePrimary,
+                    themeSecondary = themeSecondary,
+                    themeAccent = themeAccent,
+                    modifier = Modifier.fillMaxWidth().height(90.dp)
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -1989,11 +2590,51 @@ fun SpecsTab(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    PinoutCategoryRow("A1,A12,B1,B12", "GND", "Shielding grounding return path", Color.White.copy(alpha = 0.35f))
-                    PinoutCategoryRow("A4,A9,B4,B9", "VBUS", "Power delivery bus rails (supports up to 48V/5A under EPR)", themePrimary)
-                    PinoutCategoryRow("A5,B5", "CC1, CC2", "Configuration Channel (Power handshakes with E-Marker)", themeAccent)
-                    PinoutCategoryRow("A2,A3,B10,B11", "TX1+/-, RX1+/-", "SuperSpeed high frequency lanes (supports 5 / 10 / 20 / 40 Gbps)", themeSecondary)
-                    PinoutCategoryRow("A6,A7,B6,B7", "D+/D-", "Legacy backward-compatible differential data rails", Color.White)
+                    PinoutCategoryRow(
+                        pins = "A1,A12,B1,B12",
+                        label = "GND",
+                        desc = "Shielding grounding return path and complete current loop return safety channels.",
+                        statusText = if (isConnected) "ACTIVE / COMPLETED" else "DISCONNECTED",
+                        isActive = isConnected,
+                        color = Color.White,
+                        themeAccent = themeAccent
+                    )
+                    PinoutCategoryRow(
+                        pins = "A4,A9,B4,B9",
+                        label = "VBUS",
+                        desc = "Power delivery bus rails (senses up to 48V/5A under Extended Power Range handshakes).",
+                        statusText = if (isConnected) "ACTIVE (${String.format("%.1f", usbState.chargingVoltageVolts)}V RAIL)" else "DISCONNECTED",
+                        isActive = isConnected,
+                        color = themePrimary,
+                        themeAccent = themeAccent
+                    )
+                    PinoutCategoryRow(
+                        pins = "A5,B5",
+                        label = "CC1,CC2",
+                        desc = "Configuration Channel used for cable orientation discovery, power handshakes, and E-marking communication.",
+                        statusText = if (isConnected) (if (isCc) "ACTIVE (NEGOTIATED)" else "LEGACY INLINE") else "DISCONNECTED",
+                        isActive = isConnected,
+                        color = themeAccent,
+                        themeAccent = themeAccent
+                    )
+                    PinoutCategoryRow(
+                        pins = "A2,A3,B10,B11",
+                        label = "TX+/-,RX+/-",
+                        desc = "Ultra-frequency differential lanes for high-speed capabilities: supports up to 40 Gbps on SuperSpeed buses.",
+                        statusText = if (isSuperSpeed) "ACTIVE (SUPERSPEED)" else if (isConnected) "INACTIVE (USB 2.0 STANDARD)" else "DISCONNECTED",
+                        isActive = isSuperSpeed,
+                        color = themeSecondary,
+                        themeAccent = themeAccent
+                    )
+                    PinoutCategoryRow(
+                        pins = "A6,A7,B6,B7",
+                        label = "D+/D-",
+                        desc = "Legacy backward-compatible differential data multiplexing channels, active by default on simple lines.",
+                        statusText = if (isConnected) "ACTIVE (MULTIPLEXED)" else "DISCONNECTED",
+                        isActive = isConnected,
+                        color = Color(0xFF34D399),
+                        themeAccent = themeAccent
+                    )
                 }
             }
         }
@@ -2028,38 +2669,106 @@ fun SpecsTab(
 }
 
 @Composable
-fun PinoutCategoryRow(pins: String, label: String, desc: String, color: Color) {
+fun PinoutCategoryRow(
+    pins: String,
+    label: String,
+    desc: String,
+    statusText: String,
+    isActive: Boolean,
+    color: Color,
+    themeAccent: Color
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0x06FFFFFF), shape = RoundedCornerShape(12.dp))
-            .border(0.5.dp, Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
+            .border(
+                0.5.dp, 
+                if (isActive) color.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f), 
+                shape = RoundedCornerShape(12.dp)
+            )
             .padding(10.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .width(54.dp)
-                .background(color.copy(alpha = 0.15f), shape = RoundedCornerShape(5.dp))
-                .border(0.5.dp, color.copy(alpha = 0.35f), shape = RoundedCornerShape(5.dp))
-                .padding(vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(54.dp)
+                        .background(
+                            if (isActive) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f), 
+                            shape = RoundedCornerShape(5.dp)
+                        )
+                        .border(
+                            0.5.dp, 
+                            if (isActive) color.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f), 
+                            shape = RoundedCornerShape(5.dp)
+                        )
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.5.sp,
+                            color = if (isActive) color else Color.White.copy(alpha = 0.4f),
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
+                
+                Text(
+                    text = pins, 
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isActive) Color.White else Color.White.copy(alpha = 0.4f), 
+                        fontWeight = FontWeight.Bold, 
+                        fontSize = 10.sp
+                    )
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Connection badge status text
+                Box(
+                    modifier = Modifier
+                        .background(
+                            if (isActive) color.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.03f), 
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                        .border(
+                            0.5.dp, 
+                            if (isActive) color.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.08f), 
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isActive) color else Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             Text(
-                text = label,
+                text = desc, 
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 9.5.sp,
-                    color = color,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                    color = Color.White.copy(alpha = 0.55f), 
+                    fontSize = 10.sp, 
+                    lineHeight = 14.sp
                 )
             )
-        }
-
-        Column {
-            Text(pins, style = MaterialTheme.typography.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp))
-            Text(desc, style = MaterialTheme.typography.labelSmall.copy(color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp, lineHeight = 14.sp))
         }
     }
 }
@@ -2087,14 +2796,43 @@ fun StandardRow(std: String, speed: String, voltAmp: String, watt: String, theme
 
 // Custom Draw Canvas rendering of physical 24 pins connector layout
 @Composable
-fun UsbTypeCPinoutCanvas(modifier: Modifier = Modifier) {
+fun UsbTypeCPinoutCanvas(
+    usbState: UsbStateInfo,
+    themePrimary: Color,
+    themeSecondary: Color,
+    themeAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    // Derive connection properties
+    val isConnected = usbState.isConnected
+    val isCc = if (isConnected) {
+        (usbState.chargingPowerWatts > 15.0) || (usbState.powerSource == "AC Fast Charger") || (usbState.chargingCurrentAmperes > 1.5) || usbState.usbDevices.any { it.maxSpeedMbps > 440 }
+    } else {
+        true
+    }
+    
+    val isSuperSpeed = isConnected && (
+        usbState.usbDevices.any { it.maxSpeedMbps > 440 } || usbState.chargingPowerWatts > 18.0
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "PinPulse")
+    val sparkPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "SparkPhase"
+    )
+
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
 
         // Outer metal collar casing
         drawRoundRect(
-            color = Color.White.copy(alpha = 0.12f),
+            color = if (isConnected) themePrimary.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f),
             topLeft = Offset(0f, 10f),
             size = androidx.compose.ui.geometry.Size(w, h - 20f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx(), 16.dp.toPx()),
@@ -2103,13 +2841,13 @@ fun UsbTypeCPinoutCanvas(modifier: Modifier = Modifier) {
 
         // Inner core tongue
         drawRoundRect(
-            color = DarkGlass,
+            color = if (isConnected) themePrimary.copy(alpha = 0.05f) else DarkGlass,
             topLeft = Offset(12.dp.toPx(), 18.dp.toPx()),
             size = androidx.compose.ui.geometry.Size(w - 24.dp.toPx(), h - 36.dp.toPx()),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx())
         )
         drawRoundRect(
-            color = Color.White.copy(alpha = 0.2f),
+            color = if (isConnected) themePrimary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.2f),
             topLeft = Offset(12.dp.toPx(), 18.dp.toPx()),
             size = androidx.compose.ui.geometry.Size(w - 24.dp.toPx(), h - 36.dp.toPx()),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx(), 10.dp.toPx()),
@@ -2125,23 +2863,43 @@ fun UsbTypeCPinoutCanvas(modifier: Modifier = Modifier) {
             val pinX = startMargin + (i * spacing)
             val centerY = h / 2f
 
-            // Alternate colors for standard pins groupings
+            // Check if pin group is active
+            val isPinActive = when (i) {
+                0, 11 -> isConnected // GND is active when connected 
+                3, 8 -> isConnected // VBUS is active when connected
+                4 -> isConnected // CC lines are active when connected
+                5, 6 -> isConnected // D+/D- lines are active when connected
+                1, 2, 9, 10 -> isSuperSpeed // High speed lanes are only active on SuperSpeed
+                else -> false
+            }
+
+            // Pin grouping colors
             val pinColor = when (i) {
-                0, 11 -> Color.White.copy(alpha = 0.35f) // GND
-                3, 8 -> CyberTeal                      // VBUS
-                1, 2, 9, 10 -> CyberPurple               // High Speed TX/RX Lanes
-                4 -> CyberPink                         // CC lines
-                5, 6 -> Color.White                    // D+/D- channels
-                else -> Color.Gray
+                0, 11 -> if (isPinActive) Color.White else Color.White.copy(alpha = 0.15f) // GND
+                3, 8 -> if (isPinActive) themePrimary else themePrimary.copy(alpha = 0.15f) // VBUS
+                1, 2, 9, 10 -> if (isPinActive) themeSecondary else themeSecondary.copy(alpha = 0.15f) // High Speed RX/TX lanes
+                4 -> if (isPinActive) themeAccent else themeAccent.copy(alpha = 0.15f) // CC lines
+                5, 6 -> if (isPinActive) Color(0xFF34D399) else Color(0xFF34D399).copy(alpha = 0.15f) // D+/D- Mint color
+                else -> Color.Gray.copy(alpha = 0.15f)
             }
 
             // Draw pin rectangle contacts
             drawRoundRect(
                 color = pinColor,
-                topLeft = Offset(pinX - 2.dp.toPx(), centerY - 5.dp.toPx()),
-                size = androidx.compose.ui.geometry.Size(4.dp.toPx(), 10.dp.toPx()),
+                topLeft = Offset(pinX - 2.5.dp.toPx(), centerY - 6.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(5.dp.toPx(), 12.dp.toPx()),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx(), 1.dp.toPx())
             )
+
+            // Draw spark ripple animation if active
+            if (isPinActive) {
+                val pointPulseOffset = (sparkPhase / 100f) * 12.dp.toPx()
+                drawCircle(
+                    color = pinColor.copy(alpha = 0.35f),
+                    center = Offset(pinX, centerY - 6.dp.toPx() + pointPulseOffset),
+                    radius = 2.5.dp.toPx()
+                )
+            }
         }
     }
 }
