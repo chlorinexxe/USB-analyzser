@@ -34,7 +34,11 @@ class UsbReceiver(
             // Register standard implicit android hardware action
             addAction("android.hardware.usb.action.USB_STATE")
         }
-        context.registerReceiver(receiver, filter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
         isRegistered = true
 
         // Initial fetch

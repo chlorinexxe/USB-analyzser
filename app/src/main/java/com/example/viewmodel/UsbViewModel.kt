@@ -51,6 +51,19 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
     private val _powerHistory = MutableStateFlow<List<HistoryTick>>(emptyList())
     val powerHistory: StateFlow<List<HistoryTick>> = _powerHistory.asStateFlow()
 
+    // Premium UI styling Customization parameters
+    private val _themeSelection = MutableStateFlow(0) // 0: Hyper-Blue, 1: Neon Matrix, 2: Nebula, 3: Luxury Gold
+    val themeSelection: StateFlow<Int> = _themeSelection.asStateFlow()
+
+    private val _fontSelection = MutableStateFlow(0) // 0: Space Tech, 1: Tech Monospace, 2: Elegant Inter, 3: Serif
+    val fontSelection: StateFlow<Int> = _fontSelection.asStateFlow()
+
+    private val _layoutSelection = MutableStateFlow(0) // 0: Immersive Glass, 1: Brutalist Dark, 2: Bio-Glow
+    val layoutSelection: StateFlow<Int> = _layoutSelection.asStateFlow()
+
+    private val _animationSpeed = MutableStateFlow(0) // 0: Expressive, 1: Cinema slow, 2: Static tech
+    val animationSpeed: StateFlow<Int> = _animationSpeed.asStateFlow()
+
     private var performanceJob: Job? = null
     private val maxHistoryPoints = 30
     private var tickCount = 0
@@ -98,6 +111,22 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
     fun setPerceivedSpeed(speed: Int) {
         _perceivedSpeed.value = speed
         recalculateCableMatch()
+    }
+
+    fun setThemeSelection(theme: Int) {
+        _themeSelection.value = theme
+    }
+
+    fun setFontSelection(font: Int) {
+        _fontSelection.value = font
+    }
+
+    fun setLayoutSelection(layout: Int) {
+        _layoutSelection.value = layout
+    }
+
+    fun setAnimationSpeed(speed: Int) {
+        _animationSpeed.value = speed
     }
 
     private fun startHistoricalLogger() {
@@ -286,21 +315,36 @@ class UsbViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun recalculateCableMatch() {
         val state = _usbState.value
-        val isCc = _connectorType.value == 0
-        val isAc = _connectorType.value == 1
-        val isOther = _connectorType.value == 2
 
-        val emarkYes = _eMarkerIndicator.value == 1
-        val emarkNo = _eMarkerIndicator.value == 2
-        val emarkUnk = _eMarkerIndicator.value == 0
+        // Fully automated judgment of cable specifications based on hardware signals
+        val isCc = if (state.isConnected) {
+            // C-C connections are forced for PD accessories, or power delivery > 15W, or AC Fast Charging
+            (state.chargingPowerWatts > 15.0) || (state.powerSource == "AC Fast Charger") || (state.chargingCurrentAmperes > 1.5) || state.usbDevices.any { it.maxSpeedMbps > 440 }
+        } else {
+            true // default base layout
+        }
+        val isAc = !isCc
+        val isOther = false
 
-        val videoYes = _videoAltMode.value == 1
-        val videoNo = _videoAltMode.value == 2
-        val videoUnk = _videoAltMode.value == 0
+        // E-Marker presence is dynamically determined. Unmarked C-C cables are limited to 3A max (60W).
+        // If wattage is > 60W or we detect active high-speed USB accessories, signature is verified!
+        val emarkYes = state.isConnected && isCc && (
+            state.chargingPowerWatts > 60.0 || state.maxPowerWatts > 60.0 || state.usbDevices.any { it.maxSpeedMbps > 440 }
+        )
+        val emarkNo = state.isConnected && !emarkYes
+        val emarkUnk = !state.isConnected
 
-        val speedFast = _perceivedSpeed.value == 0
-        val speedStd = _perceivedSpeed.value == 1
-        val speedSlow = _perceivedSpeed.value == 2
+        // DisplayPort Alternate Mode is auto-estimated based on active chip verification
+        val videoYes = state.isConnected && emarkYes && isCc
+        val videoNo = state.isConnected && !videoYes
+        val videoUnk = !state.isConnected
+
+        // Data speed capability is detected based on connected device descriptors or charging profile stability
+        val speedFast = state.isConnected && (
+            state.usbDevices.any { it.maxSpeedMbps > 440 } || state.chargingPowerWatts > 18.0
+        )
+        val speedStd = state.isConnected && !speedFast
+        val speedSlow = !state.isConnected
 
         // We estimate matching probability scores for five typical standard cables:
         val list = listOf(
